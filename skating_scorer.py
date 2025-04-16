@@ -5,24 +5,29 @@ from fpdf import FPDF
 from Levenshtein import distance as levenshtein_distance
 import uuid
 
+st.set_page_config(
+    page_title="My Skating App",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
 # --------------------------
 # Sidebar toggle and page config
 # --------------------------
 if "sidebar_state" not in st.session_state:
-    st.session_state.sidebar_state = "expanded"
+    st.session_state.sidebar_state = "collapsed"
 
-st.set_page_config(
-    page_title="My Skating App",
-    layout="wide",
-    initial_sidebar_state=st.session_state.sidebar_state
+def toggle_sidebar():
+    st.session_state.sidebar_state = (
+        "expanded" if st.session_state.sidebar_state == "collapsed" else "collapsed"
+    )
+    st.experimental_rerun()
+
+st.sidebar.button(
+    "Toggle Sidebar",
+    on_click=toggle_sidebar,
+    key="toggle_sidebar_button"
 )
-
-#toggle_label = "Close Sidebar" if st.session_state.sidebar_state == "expanded" else "Open Sidebar"
-#if st.button(toggle_label):
- #   st.session_state.sidebar_state = (
-  #      "collapsed" if st.session_state.sidebar_state == "expanded" else "expanded"
-   # )
-    #st.rerun()
 
 # --------------------------
 # Custom Styling (your palette)
@@ -93,6 +98,44 @@ st.markdown("""
         color: #ffffff;
         text-align: center;
         margin-bottom: 1rem;
+    }
+
+    /* GOE Buttons Styling */
+    .goe-button {
+        font-size: 1.5rem;
+        padding: 10px 15px;
+        margin: 5px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+    }
+    .goe-button-positive {
+        background-color: #4CAF50; /* Green */
+        color: white;
+    }
+    .goe-button-positive:hover {
+        background-color: #45a049;
+    }
+    .goe-button-negative {
+        background-color: #f44336; /* Red */
+        color: white;
+    }
+    .goe-button-negative:hover {
+        background-color: #da190b;
+    }
+
+    /* Mobile Responsiveness */
+    @media only screen and (max-width: 768px) {
+        .stApp {
+            padding: 10px;
+        }
+        .score-container {
+            width: 100%;
+            margin: 10px 0;
+        }
+        .big-score {
+            font-size: 2rem;
+        }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -181,9 +224,13 @@ st.session_state.pcs = sum(st.sidebar.slider(field, 0.0, 10.0, 7.5, 0.25) * 2.0 
 
 st.sidebar.subheader("Display Options")
 st.session_state.show_program_sheet = st.sidebar.checkbox("Show Planned Program Sheet")
+# Ensure the program is cleared and session state is updated
 if st.sidebar.button("Clear Program", key="clear_program_sidebar"):
     st.session_state.program = []
-    st.sidebar.success("Program has been cleared!")
+    st.session_state.scores = []
+    st.session_state.tes = 0
+    st.session_state.current = 0
+    st.sidebar.success("Program has been cleared and reset!")
 
 # --------------------------
 # Navigation Buttons (Fixed)
@@ -212,8 +259,10 @@ if st.session_state.page == "Coach Mode":
     st.subheader("Enter Program Elements")
     col1, col2 = st.columns([3, 1])
     with col1:
-        # The key must be constant for Streamlit to keep the value between reruns.
-        new_element = st.text_input("Element Code (e.g., 2A, 3T+2Lo):", key="element_input").upper().strip()
+        # Add both text input and dropdown for element codes
+        new_element_text = st.text_input("Element Code (e.g., 2A, 3T+2Lo):", key="element_input_text")
+        new_element_dropdown = st.selectbox("Or select from dropdown:", options=list(base_values.keys()), key="element_input_dropdown")
+        new_element = new_element_text if new_element_text else new_element_dropdown
     with col2:
         if st.button("Add to Program", key="add_program_btn"):
             if new_element:
@@ -245,7 +294,7 @@ if st.session_state.page == "Coach Mode":
             cols = st.columns(11)
             for i, val in enumerate(range(-5, 6)):
                 with cols[i]:
-                    if st.button(str(val), key=f"goe_{val}_{st.session_state.current}"):
+                    if st.button(f"{val}", key=f"goe_{val}_{st.session_state.current}", help=f"GOE: {val}", use_container_width=True):
                         base = sum(base_values.get(e, 0) for e in current_element.split("+"))
                         score = round(base * (1 + val / 10), 2)
                         st.session_state.tes += score
