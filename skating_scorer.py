@@ -17,6 +17,10 @@ st.set_page_config(
 if "sidebar_state" not in st.session_state:
     st.session_state.sidebar_state = "collapsed"
 
+# Ensure 'page' is initialized in session state before any access
+if 'page' not in st.session_state:
+    st.session_state.page = 'Coach'
+
 def toggle_sidebar():
     st.session_state.sidebar_state = (
         "expanded" if st.session_state.sidebar_state == "collapsed" else "collapsed"
@@ -286,31 +290,51 @@ if st.sidebar.button("Clear Program", key="clear_program_sidebar"):
     st.session_state.current = 0
     st.sidebar.success("Program has been cleared and reset!")
 
-# --------------------------
-# Navigation Buttons (Fixed)
-# --------------------------
-st.markdown("""
-<div class='fixed-nav'>
-    <form action='/' method='post'>
-        <button name='page' value='Coach' type='submit'>Coach</button>
-        <button name='page' value='Prediction' type='submit'>Prediction</button>
-        <button name='page' value='Glossary' type='submit'>Glossary</button>
-    </form>
-</div>
-""", unsafe_allow_html=True)
+# --- Download CSV at Bottom of Sidebar ---
+if st.session_state.page == "Coach" and st.session_state.current >= len(st.session_state.program):
+    protocol_df = pd.DataFrame(st.session_state.scores, columns=["Element", "GOE", "Score", "Edge Call"])
+    protocol_df["Base Value"] = protocol_df["Element"].apply(
+        lambda x: sum(base_values[part] for part in x.split("+") if part in base_values)
+    )
+    protocol_df["Final Score"] = protocol_df["Base Value"] * (1 + protocol_df["GOE"] / 10)
+    protocol_df = protocol_df[["Element", "Base Value", "GOE", "Final Score", "Edge Call"]]
+    csv = protocol_df.to_csv(index=False).encode('utf-8')
+    st.sidebar.markdown("<br><br><br>", unsafe_allow_html=True)
+    st.sidebar.download_button("⬇️ Download CSV", csv, file_name="protocol.csv", mime="text/csv")
 
-# Handle navigation
+# --------------------------
+# Navigation Buttons: Coach, Prediction, Glossary
+# --------------------------
+nav_cols = st.columns([1, 1, 1])
+with nav_cols[0]:
+    if st.button("Coach", key="nav_coach_col"):
+        st.session_state.page = "Coach"
+with nav_cols[1]:
+    if st.button("Prediction", key="nav_prediction_col"):
+        st.session_state.page = "Prediction"
+with nav_cols[2]:
+    if st.button("Glossary", key="nav_glossary_col"):
+        st.session_state.page = "Glossary"
+
+# Ensure 'page' is initialized
 if 'page' not in st.session_state:
     st.session_state.page = "Coach"
+
+# Display the selected page
+st.write(f"**Current Page:** {st.session_state.page}")
 
 # --------------------------
 # Show page content based on current page
 # --------------------------
 st.markdown(f"<div class='main-title'>⛸️ {st.session_state.page} Mode</div>", unsafe_allow_html=True)
 
-# Display live scores (TSS, TES, PCS, and deductions) at the top of the page
+# Display live scores (TSS, TES, PCS) at the top of the page, TSS first, no deductions
 st.markdown("""
 <div style='display: flex; justify-content: space-around; align-items: center; margin-bottom: 20px;'>
+    <div class='score-container'>
+        <div class='score-label'>TSS</div>
+        <div class='big-score'>{:.2f}</div>
+    </div>
     <div class='score-container'>
         <div class='score-label'>TES</div>
         <div class='big-score'>{:.2f}</div>
@@ -319,16 +343,12 @@ st.markdown("""
         <div class='score-label'>PCS</div>
         <div class='big-score'>{:.2f}</div>
     </div>
-    <div class='score-container'>
-        <div class='score-label'>Deductions</div>
-        <div class='big-score'>{:.2f}</div>
-    </div>
-    <div class='score-container'>
-        <div class='score-label'>TSS</div>
-        <div class='big-score'>{:.2f}</div>
-    </div>
 </div>
-""".format(st.session_state.tes, st.session_state.pcs, st.session_state.deductions, st.session_state.tes + st.session_state.pcs - st.session_state.deductions), unsafe_allow_html=True)
+""".format(
+    st.session_state.tes + st.session_state.pcs - st.session_state.deductions,
+    st.session_state.tes,
+    st.session_state.pcs
+), unsafe_allow_html=True)
 
 if st.session_state.page == "Coach":
     if st.session_state.current < len(st.session_state.program):
@@ -391,7 +411,7 @@ if st.session_state.page == "Coach":
             # Provide export options
             protocol_df = pd.DataFrame(st.session_state.scores, columns=["Element", "GOE", "Score", "Edge Call"])
             csv = protocol_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Download Protocol CSV", csv, file_name="protocol.csv", mime="text/csv")
+            st.sidebar.download_button("⬇️ Download CSV", csv, file_name="protocol.csv", mime="text/csv")
 
             pdf = FPDF()
             pdf.add_page()
@@ -406,7 +426,7 @@ if st.session_state.page == "Coach":
             pdf_file = "protocol_sheet.pdf"
             pdf.output(pdf_file)
             with open(pdf_file, "rb") as f:
-                st.download_button("Download Protocol PDF", f, file_name="protocol_sheet.pdf", mime="application/pdf")
+                st.download_button("📄", f, file_name="protocol_sheet.pdf", mime="application/pdf")
 
             # Allow program reset
             if st.button("Reset Program", key="reset_program_end_button"):
@@ -417,36 +437,46 @@ if st.session_state.page == "Coach":
                 st.session_state.edge_calls = {}
                 st.success("Program has been reset.")
     else:
-        # Enter elements section
-        st.subheader("Enter Program Elements")
-        # Allow adding multiple elements separated by commas, including combos
-        elements = st.text_input("Enter Element Codes (e.g., 3A, 2T+2T):").upper()
-        if st.button("Add Elements"):
-            if elements:
-                element_list = [e.strip() for e in elements.split(",")]
+        # --- Element Entry Section ---
+        st.subheader("Add Program Elements")
+        user_input = st.text_input("Enter element codes (e.g., 3A, 2T+2T, 3A, 2T+2T):", key="element_text_input")
+        col_add, spacer1, col_start, spacer2, col_reset = st.columns([1, 0.1, 1, 0.1, 1])
+        with col_add:
+                add_clicked = st.button("Add Element(s)", key="add_elements_col")
+        with col_start:
+                start_clicked = st.button("Start Program", key="start_program_col")
+        with col_reset:
+                reset_clicked = st.button("❌", key="reset_program_col")
+
+        if add_clicked:
+            added = False
+            if user_input:
+                all_element_options = list(base_values.keys())
+                element_list = [e.strip() for e in user_input.split(",") if e.strip()]
                 invalid_elements = []
                 valid_elements = []
-
                 for e in element_list:
-                    # Check if the element is a valid single element or a combo
                     if e in base_values:
                         valid_elements.append(e)
                     elif all(part in base_values for part in e.split("+")):
                         valid_elements.append(e)
                     else:
+                        suggestions = sorted(all_element_options, key=lambda x: levenshtein_distance(e, x))
+                        suggestion = suggestions[0] if suggestions else None
+                        if suggestion:
+                            st.warning(f"Invalid element code: {e}. Did you mean: {suggestion}?")
+                        else:
+                            st.warning(f"Invalid element code: {e}.")
                         invalid_elements.append(e)
-
-                if invalid_elements:
-                    st.error(f"Invalid element codes: {', '.join(invalid_elements)}")
                 if valid_elements:
                     st.session_state.program.extend(valid_elements)
                     st.success(f"Added elements: {', '.join(valid_elements)}")
-            else:
-                st.error("Please enter valid element codes.")
-            st.session_state.current = len(st.session_state.program)  # Ensure current index is updated correctly
-            st.rerun()
+                    added = True
+            if added:
+                st.session_state.current = len(st.session_state.program)
+                st.rerun()
 
-        if st.button("Reset Program", key="reset_program_input_button"):
+        if reset_clicked:
             st.session_state.program = []
             st.session_state.current = 0
             st.session_state.scores = []
@@ -457,13 +487,12 @@ if st.session_state.page == "Coach":
         if st.session_state.program:
             st.write("Program: " + ", ".join(st.session_state.program))
 
-        if st.button("Start Program"):
+        if start_clicked:
             if st.session_state.program:
                 st.session_state.current = 0
                 st.rerun()  # Transition to scoring mode
             else:
                 st.error("Please add elements to the program before starting.")
-
 
     # Fix the PCS check to avoid TypeError
     if st.session_state.pcs == 0:
@@ -501,9 +530,6 @@ if st.session_state.page == "Coach":
     """, unsafe_allow_html=True)
 
     # Provide download options for the protocol sheet
-    csv = protocol_df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download Protocol CSV", csv, file_name="protocol.csv", mime="text/csv")
-
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
@@ -522,20 +548,21 @@ if st.session_state.page == "Coach":
         pdf.ln()
     pdf_file = "protocol_sheet.pdf"
     pdf.output(pdf_file)
-    with open(pdf_file, "rb") as f:
-        st.download_button("Download Protocol PDF", f, file_name="protocol_sheet.pdf", mime="application/pdf")
 
-    # Add buttons for rerun and reset
-    col1, col2 = st.columns(2)
-    with col1:
+    # Place PDF download, Rerun, and Reset buttons on the same row
+    col_pdf, col_rerun, col_reset = st.columns([1, 1, 1], gap="large")
+    with col_pdf:
+        with open(pdf_file, "rb") as f:
+            st.download_button("📄", f, file_name="protocol_sheet.pdf", mime="application/pdf")
+    with col_rerun:
         if st.button("Rerun Program", key="rerun_program_button"):
             st.session_state.current = 0
             st.session_state.scores = []
             st.session_state.tes = 0.0
             st.session_state.edge_calls = {}
             st.rerun()
-    with col2:
-        if st.button("Reset Program", key="reset_program_button"):
+    with col_reset:
+        if st.button("❌", key="reset_program_button"):
             st.session_state.program = []
             st.session_state.current = 0
             st.session_state.scores = []
