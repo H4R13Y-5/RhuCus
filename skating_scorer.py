@@ -411,7 +411,7 @@ elif st.session_state.page == "Glossary":
     - Composition
     - Interpretation
     **TSS (Total Segment Score):** TES + PCS + Deductions.
-    **Edge Calls:** `>`, `>>`, `e`, `!` indicating unclear or wrong takeoffs.
+    **Edge Calls:** `Q`, `U`, `e`, `!` indicating unclear or wrong takeoffs.
     **Combos:** Multiple jumps linked by `+` (max 3).
     **Deductions:** Penalties for falls, violations, illegal moves.
     """)
