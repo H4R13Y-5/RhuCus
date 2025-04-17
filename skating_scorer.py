@@ -450,6 +450,15 @@ if st.session_state.page == "Coach":
                 for item in row:
                     pdf.cell(40, 10, str(item), border=1)
                 pdf.ln()
+            # Add summary (TSS, TES, PCS) to the PDF after the table
+            pdf.ln(10)
+            pdf.set_font("Arial", style="B", size=12)
+            pdf.cell(0, 10, "Summary", ln=1)
+            pdf.set_font("Arial", size=12)
+            pdf.cell(60, 10, f"TES: {st.session_state.tes:.2f}", ln=1)
+            pdf.cell(60, 10, f"PCS: {st.session_state.pcs:.2f}", ln=1)
+            tss = st.session_state.tes + st.session_state.pcs - st.session_state.deductions
+            pdf.cell(60, 10, f"TSS: {tss:.2f}", ln=1)
             pdf_file = "protocol_sheet.pdf"
             pdf.output(pdf_file)
             with open(pdf_file, "rb") as f:
@@ -492,8 +501,14 @@ if st.session_state.page == "Coach":
         if st.button("Add Elements"):
             if user_input:
                 input_list = [item.strip().upper() for item in user_input.split(",")]
-                invalid_elements = [item for item in input_list if item not in base_values]
-                valid_elements = [item for item in input_list if item in base_values]
+                valid_elements = []
+                invalid_elements = []
+                for item in input_list:
+                    parts = [p.strip() for p in item.split("+")]
+                    if 1 <= len(parts) <= 3 and all(part in base_values for part in parts):
+                        valid_elements.append("+".join(parts))
+                    else:
+                        invalid_elements.append(item)
                 if invalid_elements:
                     st.error(f"Invalid element(s): {', '.join(invalid_elements)}. Please check your input.")
                 if valid_elements:
@@ -578,6 +593,14 @@ if st.session_state.page == "Coach":
         pdf.cell(40, 10, f"{row['Final Score']:.2f}", border=1)
         pdf.cell(40, 10, str(row["Edge Call"]), border=1)
         pdf.ln()
+    # Add summary (TSS, TES, PCS) to the PDF after the table
+    pdf.ln(10)
+    pdf.set_font("Arial", style="B", size=12)
+    pdf.cell(0, 10, "Summary", ln=1)
+    pdf.set_font("Arial", size=12)
+    pdf.cell(60, 10, f"TES: {tes:.2f}", ln=1)
+    pdf.cell(60, 10, f"PCS: {pcs:.2f}", ln=1)
+    pdf.cell(60, 10, f"TSS: {tss:.2f}", ln=1)
     pdf_file = "protocol_sheet.pdf"
     pdf.output(pdf_file)
 
