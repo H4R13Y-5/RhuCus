@@ -295,11 +295,24 @@ if st.session_state.page == "Coach Mode":
             for i, val in enumerate(range(-5, 6)):
                 with cols[i]:
                     if st.button(f"{val}", key=f"goe_{val}_{st.session_state.current}", help=f"GOE: {val}", use_container_width=True):
-                        base = sum(base_values.get(e, 0) for e in current_element.split("+"))
-                        score = round(base * (1 + val / 10), 2)
-                        st.session_state.tes += score
-                        st.session_state.scores.append((current_element, val, base, score))
-                        st.session_state.current += 1
+                       # Retrieve the base value of the current element
+                            base = sum(base_values.get(e, 0) for e in current_element.split("+"))
+
+                            # Retrieve the edge call and apply penalty if present
+                            edge_call = st.session_state.edge_call.get(current_element, "")  # Get edge call (if any)
+                            edge_penalties = {">": 0.7, ">>": 0.5, "e": 0.8, "!": 0.5}  # Define penalty values
+                            penalty = edge_penalties.get(edge_call, 0)  # Get penalty for the edge call
+
+                            # Adjust base value by applying the penalty
+                            adjusted_base_value = round(base * (1 - penalty), 2)
+
+                            # Calculate final score with GOE
+                            score = round(adjusted_base_value * (1 + val / 10), 2)
+                            st.session_state.tes += score
+
+                            # Add score details, including edge call
+                            st.session_state.scores.append((current_element, val, base, adjusted_base_value, score, edge_call))
+                            st.session_state.current += 1
 
             # Edge Calls
             st.markdown("**Edge Calls:**")
