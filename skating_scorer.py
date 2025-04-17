@@ -21,13 +21,9 @@ def toggle_sidebar():
     st.session_state.sidebar_state = (
         "expanded" if st.session_state.sidebar_state == "collapsed" else "collapsed"
     )
-    st.experimental_rerun()
+    st.rerun()
 
-st.sidebar.button(
-    "Toggle Sidebar",
-    on_click=toggle_sidebar,
-    key="toggle_sidebar_button"
-)
+st.sidebar.button("Toggle Sidebar", on_click=toggle_sidebar, key="toggle_sidebar_button")
 
 # --------------------------
 # Custom Styling (your palette)
@@ -43,10 +39,12 @@ st.markdown("""
         color: #ffffff;
     }
     .custom-header button {
-        background-color: #aa9400;
-        color: white;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
+        border-radius: 5px; /* Rectangular shape */
+        width: auto; /* Adjust width to fit text */
+        height: auto; /* Adjust height to fit text */
+        padding: 10px 20px; /* Add padding for clarity */
+        font-size: 1rem; /* Adjust font size for readability */
+        text-align: center;
         margin: 0.3rem;
         font-weight: bold;
         border: 2px solid #55364e;
@@ -137,7 +135,59 @@ st.markdown("""
             font-size: 2rem;
         }
     }
+
+    .stButton button {
+        border-radius: 0; /* Removed circular styling */
+        width: auto; /* Adjust width to fit text */
+        height: auto; /* Adjust height to fit text */
+        font-size: 1rem; /* Adjust font size for readability */
+        text-align: center;
+        padding: 10px;
+        overflow: hidden; /* Ensure text does not overflow */
+        white-space: nowrap; /* Prevent text wrapping */
+    }
+
+    .stDownloadButton button {
+        border-radius: 0; /* Removed squircle styling */
+        width: auto; /* Adjust width to fit text */
+        height: auto; /* Adjust height to fit text */
+        font-size: 0.9rem; /* Adjust font size for readability */
+        text-align: center;
+        padding: 5px;
+        overflow: hidden; /* Ensure text does not overflow */
+        white-space: nowrap; /* Prevent text wrapping */
+    }
+
+    .nav-button-container button {
+        border-radius: 0; /* Removed rectangular styling */
+        width: auto; /* Adjust width to fit text */
+        height: auto; /* Adjust height to fit text */
+        padding: 10px 20px; /* Add padding for clarity */
+        font-size: 1rem; /* Adjust font size for readability */
+        text-align: center;
+        margin: 0.3rem;
+        font-weight: bold;
+        border: 2px solid #55364e;
+    }
+    .nav-button-container button:hover {
+        background-color: #45a049 !important; /* Darker green on hover */
+    }
     </style>
+""", unsafe_allow_html=True)
+
+# Inject custom CSS for a touch-friendly UI
+st.markdown("""
+<style>
+body, .stApp { background-color: #2a2a2a; color: #fff; }
+.main-title { color: #FFB703; font-size: 2.5rem; font-weight: bold; text-align: center; }
+.current-element { background: #FFB703; color: #000; padding: 15px; border-radius: 12px; font-size: 1.8rem; text-align: center; margin: 1rem 0; }
+.big-button { font-size: 2rem; padding: 25px 20px; margin: 0.5rem; border-radius: 12px; text-align: center; width: 100%; }
+.big-button-positive { background: #219EBC; color: white; border: none; }
+.big-button-negative { background: #E63946; color: white; border: none; }
+.fixed-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: #55364e; display: flex; justify-content: space-around; padding: 0.5rem 0; z-index: 9999; }
+.fixed-nav button { flex: 1; margin: 0 0.3rem; padding: 1rem; font-size: 1.2rem; font-weight: bold; border: none; border-radius: 0; color: #fff; background: #55364e; }
+.fixed-nav button:hover { background: #45a049; }
+</style>
 """, unsafe_allow_html=True)
 
 # --------------------------
@@ -205,6 +255,10 @@ def initialize_state():
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
+    if 'edge_call' not in st.session_state:
+        st.session_state.edge_call = {}
+    if 'edge_calls' not in st.session_state:
+        st.session_state.edge_calls = {}
 
 initialize_state()
 
@@ -235,153 +289,262 @@ if st.sidebar.button("Clear Program", key="clear_program_sidebar"):
 # --------------------------
 # Navigation Buttons (Fixed)
 # --------------------------
-if 'page' not in st.session_state:
-    st.session_state.page = "Coach Mode"
+st.markdown("""
+<div class='fixed-nav'>
+    <form action='/' method='post'>
+        <button name='page' value='Coach' type='submit'>Coach</button>
+        <button name='page' value='Prediction' type='submit'>Prediction</button>
+        <button name='page' value='Glossary' type='submit'>Glossary</button>
+    </form>
+</div>
+""", unsafe_allow_html=True)
 
-st.markdown("<div class='custom-header'>", unsafe_allow_html=True)
-header_cols = st.columns(3)
-with header_cols[0]:
-    if st.button("Coach Mode"):
-        st.session_state.page = "Coach Mode"
-with header_cols[1]:
-    if st.button("Prediction Mode"):
-        st.session_state.page = "Prediction Mode"
-with header_cols[2]:
-    if st.button("Glossary"):
-        st.session_state.page = "Glossary"
-st.markdown("</div>", unsafe_allow_html=True)
+# Handle navigation
+if 'page' not in st.session_state:
+    st.session_state.page = "Coach"
 
 # --------------------------
 # Show page content based on current page
 # --------------------------
-if st.session_state.page == "Coach Mode":
-    st.markdown("<div class='main-title'>⛸️ Coach Mode</div>", unsafe_allow_html=True)
-    st.subheader("Enter Program Elements")
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        # Add both text input and dropdown for element codes
-        new_element_text = st.text_input("Element Code (e.g., 2A, 3T+2Lo):", key="element_input_text")
-        new_element_dropdown = st.selectbox("Or select from dropdown:", options=list(base_values.keys()), key="element_input_dropdown")
-        new_element = new_element_text if new_element_text else new_element_dropdown
-    with col2:
-        if st.button("Add to Program", key="add_program_btn"):
-            if new_element:
-                elements = [e.strip() for e in new_element.split("+") if e.strip()]
-                if all(e in base_values for e in elements):
-                    if len(elements) <= 3:
-                        st.session_state.program.append(new_element)
-                        st.success(f"Added {new_element}")
+st.markdown(f"<div class='main-title'>⛸️ {st.session_state.page} Mode</div>", unsafe_allow_html=True)
+
+# Display live scores (TSS, TES, PCS, and deductions) at the top of the page
+st.markdown("""
+<div style='display: flex; justify-content: space-around; align-items: center; margin-bottom: 20px;'>
+    <div class='score-container'>
+        <div class='score-label'>TES</div>
+        <div class='big-score'>{:.2f}</div>
+    </div>
+    <div class='score-container'>
+        <div class='score-label'>PCS</div>
+        <div class='big-score'>{:.2f}</div>
+    </div>
+    <div class='score-container'>
+        <div class='score-label'>Deductions</div>
+        <div class='big-score'>{:.2f}</div>
+    </div>
+    <div class='score-container'>
+        <div class='score-label'>TSS</div>
+        <div class='big-score'>{:.2f}</div>
+    </div>
+</div>
+""".format(st.session_state.tes, st.session_state.pcs, st.session_state.deductions, st.session_state.tes + st.session_state.pcs - st.session_state.deductions), unsafe_allow_html=True)
+
+if st.session_state.page == "Coach":
+    if st.session_state.current < len(st.session_state.program):
+        # Display live scores (TSS, PCS, TES) at the top only
+        st.markdown(f"<div class='current-element'>{st.session_state.program[st.session_state.current]}</div>", unsafe_allow_html=True)
+
+        # Updated to handle combos as single elements with one GOE
+        columns = st.columns(11)  # Create 11 columns for -5 to +5
+        for i, val in enumerate(range(-5, 6)):
+            display_val = f"+{val}" if val > 0 else str(val)  # Add '+' for positive values
+            with columns[i]:
+                if st.button(display_val, key=f"goe_{val}_{st.session_state.current}", help="Click to select GOE", use_container_width=True):
+                    current_element = st.session_state.program[st.session_state.current]
+                    if "+" in current_element:  # Handle combos
+                        elements = current_element.split("+")
+                        base_score = sum(base_values[element] for element in elements)  # Sum base values of combo elements
                     else:
-                        st.error("Too many elements in a combination! Max is 3.")
-                else:
-                    missing = [e for e in elements if e not in base_values]
-                    suggestions = [
-                        min(base_values.keys(), key=lambda x: levenshtein_distance(e, x))
-                        for e in missing
-                    ]
-                    st.error(f"Invalid elements: {', '.join(missing)}. Did you mean: {', '.join(suggestions)}?")
-            else:
-                st.error("Please enter an element code.")
+                        base_score = base_values[current_element]
 
-    if st.session_state.program:
-        st.write(f"**Program Order:** {', '.join(st.session_state.program)}")
-        if st.session_state.current < len(st.session_state.program):
-            current_element = st.session_state.program[st.session_state.current]
-            st.subheader(f"Scoring Element {st.session_state.current+1}: {current_element}")
+                    score = base_score * (1 + val / 10)  # Apply single GOE to total base score
+                    edge_call = st.session_state.edge_calls.get(current_element, '')
+                    st.session_state.scores.append((current_element, val, score, edge_call))
+                    st.session_state.tes += score
+                    st.session_state.current += 1
+                    st.rerun()
 
-            # GOE Buttons
-            st.markdown("**Select GOE (Grade of Execution):**")
-            cols = st.columns(11)
-            for i, val in enumerate(range(-5, 6)):
-                with cols[i]:
-                    if st.button(f"{val}", key=f"goe_{val}_{st.session_state.current}", help=f"GOE: {val}", use_container_width=True):
-                       # Retrieve the base value of the current element
-                            base = sum(base_values.get(e, 0) for e in current_element.split("+"))
+        # Adjusted Edge Call Buttons Layout to include 2-character spacing between buttons
+        call_cols = st.columns(6, gap="medium")  # Create 6 columns with medium gaps for horizontal layout
+        for i, call in enumerate(["e", "!", "Q", "U", "D", "V"]):
+            with call_cols[i]:
+                if st.button(call, key=f"edge_{call}"):
+                    st.session_state.edge_calls[st.session_state.program[st.session_state.current]] = call
+                    st.rerun()
 
-                            # Retrieve the edge call and apply penalty if present
-                            edge_call = st.session_state.edge_call.get(current_element, "")  # Get edge call (if any)
-                            edge_penalties = {"Q": 0.7, "U": 0.5, "e": 0.8, "!": 0.5}  # Define penalty values
-                            penalty = edge_penalties.get(edge_call, 0)  # Get penalty for the edge call
+        if st.button("End Program"):
+            st.session_state.current = len(st.session_state.program)
+            st.success("Program ended! You can review the scores.")
 
-                            # Adjust base value by applying the penalty
-                            adjusted_base_value = round(base * (1 - penalty), 2)
+            # Stop scoring by disabling GOE and edge call inputs
+            st.markdown("<div class='sub-header'>Scoring has been completed.</div>", unsafe_allow_html=True)
 
-                            # Calculate final score with GOE
-                            score = round(adjusted_base_value * (1 + val / 10), 2)
-                            st.session_state.tes += score
+            # Display final scores prominently
+            st.markdown("""
+                <div style='display: flex; justify-content: space-around; align-items: center;'>
+                    <div class='score-container'>
+                        <div class='score-label'>TES</div>
+                        <div class='big-score'>{:.2f}</div>
+                    </div>
+                    <div class='score-container'>
+                        <div class='score-label'>PCS</div>
+                        <div class='big-score'>{:.2f}</div>
+                    </div>
+                    <div class='score-container'>
+                        <div class='score-label'>TSS</div>
+                        <div class='big-score'>{:.2f}</div>
+                    </div>
+                </div>
+            """.format(st.session_state.tes, st.session_state.pcs, st.session_state.tes + st.session_state.pcs - st.session_state.deductions), unsafe_allow_html=True)
 
-                            # Add score details, including edge call
-                            st.session_state.scores.append((current_element, val, base, adjusted_base_value, score, edge_call))
-                            st.session_state.current += 1
+            # Provide export options
+            protocol_df = pd.DataFrame(st.session_state.scores, columns=["Element", "GOE", "Score", "Edge Call"])
+            csv = protocol_df.to_csv(index=False).encode('utf-8')
+            st.download_button("Download Protocol CSV", csv, file_name="protocol.csv", mime="text/csv")
 
-            # Edge Calls
-            st.markdown("**Edge Calls:**")
-            edge_calls = st.columns(4)
-            edge_labels = ["Q", "U", "e", "!"]
-            for idx, label in enumerate(edge_labels):
-                with edge_calls[idx]:
-                    if st.button(label, key=f"edge_call_{label}_{st.session_state.current}"):
-                        st.session_state.program[st.session_state.current] += f" {label}"
-                        st.success(f"Added edge call: {label}")
-
-            # Display Scores with styling
-            tss = st.session_state.tes + st.session_state.pcs + st.session_state.deductions
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.markdown(f"<div class='score-container'><div class='score-label'>TES</div><div class='big-score'>{st.session_state.tes:.2f}</div></div>", unsafe_allow_html=True)
-            with col2:
-                st.markdown(f"<div class='score-container'><div class='score-label'>PCS</div><div class='big-score'>{st.session_state.pcs:.2f}</div></div>", unsafe_allow_html=True)
-            with col3:
-                st.markdown(f"<div class='score-container'><div class='score-label'>TSS</div><div class='big-score'>{tss:.2f}</div></div>", unsafe_allow_html=True)
-
-    # Protocol Sheet Export (CSV & PDF)
-    def generate_pdf(dataframe, filename):
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        pdf.set_font("Arial", style="B", size=16)
-        pdf.cell(200, 10, txt="Protocol Sheet", ln=True, align="C")
-        pdf.ln(10)
-        pdf.set_font("Arial", style="B", size=12)
-        for column in dataframe.columns:
-            pdf.cell(40, 10, str(column), border=1, align="C")
-        pdf.ln()
-        pdf.set_font("Arial", size=12)
-        for _, row in dataframe.iterrows():
-            for item in row:
-                pdf.cell(40, 10, str(item) if pd.notna(item) else "", border=1, align="C")
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            for col in protocol_df.columns:
+                pdf.cell(40, 10, col, border=1)
             pdf.ln()
-        pdf.output(filename)
+            for _, row in protocol_df.iterrows():
+                for item in row:
+                    pdf.cell(40, 10, str(item), border=1)
+                pdf.ln()
+            pdf_file = "protocol_sheet.pdf"
+            pdf.output(pdf_file)
+            with open(pdf_file, "rb") as f:
+                st.download_button("Download Protocol PDF", f, file_name="protocol_sheet.pdf", mime="application/pdf")
 
-    if st.session_state.scores:
-        protocol_df = pd.DataFrame(st.session_state.scores, columns=["Element", "GOE", "Base Value", "Final Score"])
-        totals = pd.DataFrame({
-            "Element": ["TES", "PCS", "Deductions", "TSS"],
-            "Final Score": [
-                st.session_state.tes,
-                st.session_state.pcs,
-                st.session_state.deductions,
-                st.session_state.tes + st.session_state.pcs + st.session_state.deductions
-            ]
-        })
-        full_df = pd.concat([protocol_df, pd.DataFrame([{}]), totals], ignore_index=True)
-        st.write(full_df)
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_data = full_df.to_csv(index=False).encode('utf-8')
-        st.download_button(f"Download Protocol Sheet ({timestamp})", csv_data, f"protocol_sheet_{timestamp}.csv")
-        # PDF export
-        pdf_filename = f"protocol_sheet_{timestamp}.pdf"
-        if st.button("Download Protocol Sheet as PDF"):
-            generate_pdf(full_df, pdf_filename)
-            with open(pdf_filename, "rb") as pdf_file:
-                st.download_button("Download PDF", pdf_file, file_name=pdf_filename, mime="application/pdf")
+            # Allow program reset
+            if st.button("Reset Program", key="reset_program_end_button"):
+                st.session_state.program = []
+                st.session_state.current = 0
+                st.session_state.scores = []
+                st.session_state.tes = 0.0
+                st.session_state.edge_calls = {}
+                st.success("Program has been reset.")
     else:
-        st.warning("No scored elements available. Please score some elements in Coach Mode.")
+        # Enter elements section
+        st.subheader("Enter Program Elements")
+        # Allow adding multiple elements separated by commas, including combos
+        elements = st.text_input("Enter Element Codes (e.g., 3A, 2T+2T):").upper()
+        if st.button("Add Elements"):
+            if elements:
+                element_list = [e.strip() for e in elements.split(",")]
+                invalid_elements = []
+                valid_elements = []
 
-elif st.session_state.page == "Prediction Mode":
+                for e in element_list:
+                    # Check if the element is a valid single element or a combo
+                    if e in base_values:
+                        valid_elements.append(e)
+                    elif all(part in base_values for part in e.split("+")):
+                        valid_elements.append(e)
+                    else:
+                        invalid_elements.append(e)
+
+                if invalid_elements:
+                    st.error(f"Invalid element codes: {', '.join(invalid_elements)}")
+                if valid_elements:
+                    st.session_state.program.extend(valid_elements)
+                    st.success(f"Added elements: {', '.join(valid_elements)}")
+            else:
+                st.error("Please enter valid element codes.")
+            st.session_state.current = len(st.session_state.program)  # Ensure current index is updated correctly
+            st.rerun()
+
+        if st.button("Reset Program", key="reset_program_input_button"):
+            st.session_state.program = []
+            st.session_state.current = 0
+            st.session_state.scores = []
+            st.session_state.tes = 0.0
+            st.session_state.edge_calls = {}
+            st.success("Program has been reset.")
+
+        if st.session_state.program:
+            st.write("Program: " + ", ".join(st.session_state.program))
+
+        if st.button("Start Program"):
+            if st.session_state.program:
+                st.session_state.current = 0
+                st.rerun()  # Transition to scoring mode
+            else:
+                st.error("Please add elements to the program before starting.")
+
+
+    # Fix the PCS check to avoid TypeError
+    if st.session_state.pcs == 0:
+        st.warning("You have not adjusted the PCS scores. Please adjust them in the sidebar before proceeding.")
+        st.stop()  # Stop further execution until PCS scores are adjusted
+
+    st.success("All GOE's have been entered! Here is the protocol sheet:")
+
+    # Generate protocol sheet DataFrame
+    protocol_df = pd.DataFrame(st.session_state.scores, columns=["Element", "GOE", "Score", "Edge Call"])
+    protocol_df["Base Value"] = protocol_df["Element"].apply(
+        lambda x: sum(base_values[part] for part in x.split("+") if part in base_values)
+    )
+    protocol_df["Final Score"] = protocol_df["Base Value"] * (1 + protocol_df["GOE"] / 10)
+    protocol_df = protocol_df[["Element", "Base Value", "GOE", "Final Score", "Edge Call"]]
+
+    # Display protocol sheet using Streamlit's built-in table functionality
+    st.dataframe(protocol_df.style.set_properties(**{'text-align': 'center'}))
+
+    # Calculate TSS, TES, PCS, and deductions
+    tes = float(protocol_df["Final Score"].sum())
+    pcs = float(st.session_state.pcs)
+    deductions = float(st.session_state.deductions)
+    tss = tes + pcs - deductions
+
+    # Display TSS, TES, PCS, and deductions
+    st.markdown(f"""
+    <div style='margin-top: 20px;'>
+        <h3>Summary</h3>
+        <p><strong>TES:</strong> {tes:.2f}</p>
+        <p><strong>PCS:</strong> {pcs:.2f}</p>
+        <p><strong>Deductions:</strong> {deductions:.2f}</p>
+        <p><strong>TSS:</strong> {tss:.2f}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Provide download options for the protocol sheet
+    csv = protocol_df.to_csv(index=False).encode('utf-8')
+    st.download_button("Download Protocol CSV", csv, file_name="protocol.csv", mime="text/csv")
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(40, 10, "Element", border=1)
+    pdf.cell(40, 10, "Base Value", border=1)
+    pdf.cell(40, 10, "GOE", border=1)
+    pdf.cell(40, 10, "Final Score", border=1)
+    pdf.cell(40, 10, "Edge Call", border=1)
+    pdf.ln()
+    for _, row in protocol_df.iterrows():
+        pdf.cell(40, 10, str(row["Element"]), border=1)
+        pdf.cell(40, 10, f"{row['Base Value']:.2f}", border=1)
+        pdf.cell(40, 10, str(row["GOE"]), border=1)
+        pdf.cell(40, 10, f"{row['Final Score']:.2f}", border=1)
+        pdf.cell(40, 10, str(row["Edge Call"]), border=1)
+        pdf.ln()
+    pdf_file = "protocol_sheet.pdf"
+    pdf.output(pdf_file)
+    with open(pdf_file, "rb") as f:
+        st.download_button("Download Protocol PDF", f, file_name="protocol_sheet.pdf", mime="application/pdf")
+
+    # Add buttons for rerun and reset
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Rerun Program", key="rerun_program_button"):
+            st.session_state.current = 0
+            st.session_state.scores = []
+            st.session_state.tes = 0.0
+            st.session_state.edge_calls = {}
+            st.rerun()
+    with col2:
+        if st.button("Reset Program", key="reset_program_button"):
+            st.session_state.program = []
+            st.session_state.current = 0
+            st.session_state.scores = []
+            st.session_state.tes = 0.0
+            st.session_state.edge_calls = {}
+            st.success("Program has been reset.")
+
+elif st.session_state.page == "Prediction":
     # Prediction Mode Content
-    st.markdown("<div class='main-title'>📊 Prediction Mode</div>", unsafe_allow_html=True)
     st.subheader("Prediction Program Builder")
     program_pred = st.multiselect("Select your program elements:", options=list(base_values.keys()))
     if st.button("Predict Scores", key="predict_scores"):
@@ -400,7 +563,6 @@ elif st.session_state.page == "Prediction Mode":
 
 elif st.session_state.page == "Glossary":
     # Glossary Content
-    st.markdown("<div class='main-title'>📖 Glossary</div>", unsafe_allow_html=True)
     st.write("""
     **GOE (Grade of Execution):** Performance bonus/penalty (-5 to +5) applied to base element values.
     **TES (Technical Element Score):** Sum of all scored technical elements.
