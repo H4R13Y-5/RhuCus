@@ -35,12 +35,14 @@ st.sidebar.button("Toggle Sidebar", on_click=toggle_sidebar, key="toggle_sidebar
 st.markdown("""
     <style>
     .stApp {
-        background-color: #6f6f6f;
-        color: #ffffff;
+        background-color: #55464e;
+        background-color: #55364e !important;
+        color: #222222; /* Changed from #ffffff to dark for light mode */
     }
     .css-1d391kg {
         background-color: #55364e !important;
-        color: #ffffff;
+        color: #222222 !important; /* Changed from #ffffff to dark for light mode */
+            
     }
     .custom-header button {
         border-radius: 5px; /* Rectangular shape */
@@ -52,21 +54,31 @@ st.markdown("""
         margin: 0.3rem;
         font-weight: bold;
         border: 2px solid #55364e;
+        background-color: #55364e !important;
+            
+            
     }
     .custom-header button:hover {
         background-color: #55364e;
-        color: #aa9400;
+        color: #aa9400; /* Gold color for hover effect */
+        background-color: #55364e !important;
     }
     .main-title {
         color: #aa9400;
         font-size: 2.5rem;
         font-weight: bold;
-        margin-top: 1rem;
+        margin-top: 1rem; /* Added margin for spacing */
+        text-align: center; /* Center the title */
+        margin-bottom: 1rem; /* Added margin for spacing */ 
     }
     .sub-header {
         color: #55364e;
         font-size: 1.5rem;
         font-weight: bold;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+        background-color: #55364e !important;
+        padding: 0.5rem;
     }
     .footer {
         margin-top: 3rem;
@@ -74,10 +86,14 @@ st.markdown("""
         border-top: 2px solid #aa9400;
         text-align: center;
         font-size: 0.9rem;
-        color: #ddd;
+        color: ##dddfff; /* Light gray for footer text */
+        background-color: #55364e; /* Dark background for footer */
+        background-color: #55364e !important;
+        
+        
     }
     .score-container {
-        background-color: #55364e;
+        background-color: #f4f4f4; /* Light gray for visibility in light mode */
         border: 3px solid #aa9400;
         border-radius: 15px;
         padding: 15px;
@@ -85,11 +101,13 @@ st.markdown("""
         width: 150px;
         display: inline-block;
         vertical-align: top;
-        color: #ffffff;
+        color: #808080; /* Gray text for contrast */
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s ease-in-out;
     }
     .score-label {
         font-size: 1.5rem;
-        color: #aa9400;
+        color: #aa9400; /* Gold color for labels */
         font-weight: bold;
         margin-bottom: 0.2rem;
         text-align: center;
@@ -97,33 +115,42 @@ st.markdown("""
     .big-score {
         font-size: 3rem;
         font-weight: bold;
-        color: #ffffff;
+        color: #55364e ; /* Dark color for contrast */
         text-align: center;
         margin-bottom: 1rem;
     }
-
+    
     /* GOE Buttons Styling */
-    .goe-button {
+    .goe-button { 
+        background-color: #55364e !important;
+            
         font-size: 1.5rem;
         padding: 10px 15px;
         margin: 5px;
         border-radius: 8px;
-        border: none;
+        border: 2px solid #55364e;
+        background-color: #fff; /* White background for visibility */
+        color: #55364e; /* Dark text for contrast */
+        transition: background-color 0.3s ease, color 0.3s ease;
         cursor: pointer;
     }
     .goe-button-positive {
         background-color: #4CAF50; /* Green */
-        color: white;
+        color: Black; /* Black text for contrast */
+        border: 2px solid #4CAF50; /* Green border */
     }
     .goe-button-positive:hover {
-        background-color: #45a049;
+        background-color: #45a049; /* Darker green on hover */
+        color: white; /* White text on hover */ 
     }
     .goe-button-negative {
-        background-color: #f44336; /* Red */
-        color: white;
+        background-color: #f44336; /* Red */ 
+        color:Black; /* Black text for contrast */
+        border: 2px solid #f44336; /* Red border */ 
     }
-    .goe-button-negative:hover {
-        background-color: #da190b;
+    .goe-button-negative:hover {   
+        background-color: #da190b; /* Darker red on hover */
+        color: white; /* White text on hover */ 
     }
 
     /* Mobile Responsiveness */
@@ -134,8 +161,8 @@ st.markdown("""
         .score-container {
             width: 100%;
             margin: 10px 0;
-        }
-        .big-score {
+    }
+    .big-score {
             font-size: 2rem;
         }
     }
@@ -151,7 +178,7 @@ st.markdown("""
         white-space: nowrap; /* Prevent text wrapping */
     }
 
-    .stDownloadButton button {
+.stDownloadButton button {
         border-radius: 0; /* Removed squircle styling */
         width: auto; /* Adjust width to fit text */
         height: auto; /* Adjust height to fit text */
@@ -162,7 +189,7 @@ st.markdown("""
         white-space: nowrap; /* Prevent text wrapping */
     }
 
-    .nav-button-container button {
+.nav-button-container button {
         border-radius: 0; /* Removed rectangular styling */
         width: auto; /* Adjust width to fit text */
         height: auto; /* Adjust height to fit text */
@@ -437,44 +464,49 @@ if st.session_state.page == "Coach":
                 st.session_state.edge_calls = {}
                 st.success("Program has been reset.")
     else:
-        # --- Element Entry Section ---
-        st.subheader("Add Program Elements")
-        user_input = st.text_input("Enter element codes (e.g., 3A, 2T+2T, 3A, 2T+2T):", key="element_text_input")
-        col_add, spacer1, col_start, spacer2, col_reset = st.columns([1, 0.1, 1, 0.1, 1])
-        with col_add:
-                add_clicked = st.button("Add Element(s)", key="add_elements_col")
-        with col_start:
-                start_clicked = st.button("Start Program", key="start_program_col")
-        with col_reset:
-                reset_clicked = st.button("❌", key="reset_program_col")
+        # --- Element Entry Section with Click-to-Autofill Suggestions ---
+        def autocomplete_suggestions(input_text, options):
+            if not input_text:
+                return []
+            suggestions = [option for option in options if option.startswith(input_text.upper())]
+            return suggestions[:10]
 
-        if add_clicked:
-            added = False
+        user_input = st.text_input(
+            "Enter element codes (e.g., 3A, 2T+2T):",
+            key="element_autocomplete"
+        )
+
+        all_element_options = list(base_values.keys())
+        autocomplete_options = autocomplete_suggestions(user_input, all_element_options)
+
+        # Display clickable suggestions below the text input
+        if autocomplete_options:
+            st.markdown("**Suggestions:**", unsafe_allow_html=True)
+            sugg_cols = st.columns(len(autocomplete_options))
+            for i, suggestion in enumerate(autocomplete_options):
+                with sugg_cols[i]:
+                    if st.button(suggestion, key=f"suggestion_{suggestion}"):
+                        st.session_state.element_autocomplete = suggestion
+                        st.experimental_rerun()
+
+        if st.button("Add Elements"):
             if user_input:
-                all_element_options = list(base_values.keys())
-                element_list = [e.strip() for e in user_input.split(",") if e.strip()]
-                invalid_elements = []
-                valid_elements = []
-                for e in element_list:
-                    if e in base_values:
-                        valid_elements.append(e)
-                    elif all(part in base_values for part in e.split("+")):
-                        valid_elements.append(e)
-                    else:
-                        suggestions = sorted(all_element_options, key=lambda x: levenshtein_distance(e, x))
-                        suggestion = suggestions[0] if suggestions else None
-                        if suggestion:
-                            st.warning(f"Invalid element code: {e}. Did you mean: {suggestion}?")
-                        else:
-                            st.warning(f"Invalid element code: {e}.")
-                        invalid_elements.append(e)
+                input_list = [item.strip().upper() for item in user_input.split(",")]
+                invalid_elements = [item for item in input_list if item not in base_values]
+                valid_elements = [item for item in input_list if item in base_values]
+                if invalid_elements:
+                    st.error(f"Invalid element(s): {', '.join(invalid_elements)}. Please check your input.")
                 if valid_elements:
                     st.session_state.program.extend(valid_elements)
-                    st.success(f"Added elements: {', '.join(valid_elements)}")
-                    added = True
-            if added:
-                st.session_state.current = len(st.session_state.program)
-                st.rerun()
+                    st.success(f"Added element(s): {', '.join(valid_elements)}")
+            else:
+                st.error("Please enter a valid element code.")
+
+        col_start, spacer, col_reset = st.columns([1, 0.1, 1])
+        with col_start:
+            start_clicked = st.button("Start Program", key="start_program_col")
+        with col_reset:
+            reset_clicked = st.button("❌", key="reset_program_col")
 
         if reset_clicked:
             st.session_state.program = []
