@@ -300,7 +300,7 @@ if st.session_state.page == "Coach Mode":
 
                             # Retrieve the edge call and apply penalty if present
                             edge_call = st.session_state.edge_call.get(current_element, "")  # Get edge call (if any)
-                            edge_penalties = {">": 0.7, ">>": 0.5, "e": 0.8, "!": 0.5}  # Define penalty values
+                            edge_penalties = {"Q": 0.7, "U": 0.5, "e": 0.8, "!": 0.5}  # Define penalty values
                             penalty = edge_penalties.get(edge_call, 0)  # Get penalty for the edge call
 
                             # Adjust base value by applying the penalty
