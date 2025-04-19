@@ -4,6 +4,8 @@ import datetime
 from fpdf import FPDF
 from Levenshtein import distance as levenshtein_distance
 import uuid
+import json
+import io
 
 st.set_page_config(
     page_title="My Skating App",
@@ -26,8 +28,6 @@ def toggle_sidebar():
         "expanded" if st.session_state.sidebar_state == "collapsed" else "collapsed"
     )
     st.rerun()
-
-st.sidebar.button("Toggle Sidebar", on_click=toggle_sidebar, key="toggle_sidebar_button")
 
 # --------------------------
 # Custom Styling (your palette)
@@ -221,6 +221,30 @@ body, .stApp { background-color: #2a2a2a; color: #fff; }
 </style>
 """, unsafe_allow_html=True)
 
+# --- Mobile Optimization: Add responsive CSS for larger buttons and better layout ---
+st.markdown('''
+<style>
+@media only screen and (max-width: 600px) {
+  .stButton button, .stDownloadButton button {
+    font-size: 1.3rem !important;
+    padding: 18px 10px !important;
+    min-width: 90vw !important;
+    margin-bottom: 10px !important;
+  }
+  .stTextInput input {
+    font-size: 1.2rem !important;
+    padding: 12px !important;
+  }
+  .stSelectbox div[data-baseweb="select"] {
+    font-size: 1.1rem !important;
+  }
+  .stDataFrame, .stTable {
+    font-size: 1.1rem !important;
+  }
+}
+</style>
+''', unsafe_allow_html=True)
+
 # --------------------------
 # Base Values (your scoring elements)
 # --------------------------
@@ -293,6 +317,16 @@ def initialize_state():
 
 initialize_state()
 
+# --- Competition Mode and Skater Management ---
+if 'competition_mode' not in st.session_state:
+    st.session_state.competition_mode = False
+if 'skaters' not in st.session_state:
+    st.session_state.skaters = {}
+if 'selected_skater' not in st.session_state:
+    st.session_state.selected_skater = ''
+if 'competition_scoring' not in st.session_state:
+    st.session_state.competition_scoring = None
+
 # --------------------------
 # Sidebar: Deductions and PCS Sliders
 # --------------------------
@@ -305,16 +339,22 @@ st.session_state.deductions = falls_deductions + time_violation + costume_violat
 
 st.sidebar.subheader("Program Components (x2.0)")
 pcs_fields = ["Skating Skills", "Transitions", "Performance", "Composition", "Interpretation"]
-st.session_state.pcs = sum(st.sidebar.slider(field, 0.0, 10.0, 7.5, 0.25) * 2.0 for field in pcs_fields)
+st.session_state.pcs = sum(st.sidebar.slider(field, 0.0, 10.0, 0.0, 0.25) * 2.0 for field in pcs_fields)
 
 st.sidebar.subheader("Display Options")
 st.session_state.show_program_sheet = st.sidebar.checkbox("Show Planned Program Sheet")
 # Ensure the program is cleared and session state is updated
 if st.sidebar.button("Clear Program", key="clear_program_sidebar"):
-    st.session_state.program = []
-    st.session_state.scores = []
-    st.session_state.tes = 0
-    st.session_state.current = 0
+    if st.session_state.competition_mode:
+        st.session_state.skaters[st.session_state.selected_skater]['program'] = []
+        st.session_state.skaters[st.session_state.selected_skater]['scores'] = []
+        st.session_state.skaters[st.session_state.selected_skater]['tes'] = 0
+        st.session_state.skaters[st.session_state.selected_skater]['current'] = 0
+    else:
+        st.session_state.program = []
+        st.session_state.scores = []
+        st.session_state.tes = 0
+        st.session_state.current = 0
     st.sidebar.success("Program has been cleared and reset!")
 
 # --- Download CSV at Bottom of Sidebar ---
@@ -329,56 +369,60 @@ if st.session_state.page == "Coach" and st.session_state.current >= len(st.sessi
     st.sidebar.markdown("<br><br><br>", unsafe_allow_html=True)
     st.sidebar.download_button("⬇️ Download CSV", csv, file_name="protocol.csv", mime="text/csv")
 
-# --------------------------
-# Navigation Buttons: Coach, Prediction, Glossary
-# --------------------------
-nav_cols = st.columns([1, 1, 1])
-with nav_cols[0]:
-    if st.button("Coach", key="nav_coach_col"):
-        st.session_state.page = "Coach"
-with nav_cols[1]:
-    if st.button("Prediction", key="nav_prediction_col"):
-        st.session_state.page = "Prediction"
-with nav_cols[2]:
-    if st.button("Glossary", key="nav_glossary_col"):
-        st.session_state.page = "Glossary"
-
-# Ensure 'page' is initialized
-if 'page' not in st.session_state:
-    st.session_state.page = "Coach"
-
-# Display the selected page
-st.write(f"**Current Page:** {st.session_state.page}")
+# --- Tabs Navigation ---
+tab_labels = ["Coach", "Prediction", "Skater Management", "Competition", "Results"]
+tabs = st.tabs(tab_labels)
 
 # --------------------------
-# Show page content based on current page
+# Autocomplete Suggestions
 # --------------------------
-st.markdown(f"<div class='main-title'>⛸️ {st.session_state.page} Mode</div>", unsafe_allow_html=True)
+def autocomplete_suggestions(input_text, options):
+    if not input_text:
+        return []
+    input_upper = input_text.upper()
+    # If input is valid, return no suggestions
+    if input_upper in options:
+        return []
+    # For short inputs (<=3 chars), prioritize substring matches
+    if len(input_upper) <= 3:
+        substr_matches = [option for option in options if input_upper in option]
+        if substr_matches:
+            return substr_matches[:3]
+    # Otherwise, return 3 closest options by Levenshtein distance
+    distances = [(option, levenshtein_distance(input_upper, option)) for option in options]
+    distances.sort(key=lambda x: x[1])
+    return [option for option, _ in distances[:3]]
 
-# Display live scores (TSS, TES, PCS) at the top of the page, TSS first, no deductions
-st.markdown("""
-<div style='display: flex; justify-content: space-around; align-items: center; margin-bottom: 20px;'>
-    <div class='score-container'>
-        <div class='score-label'>TSS</div>
-        <div class='big-score'>{:.2f}</div>
+# Coach Tab
+with tabs[0]:
+    # --- Coach Page Content ---
+    st.markdown(f"<div class='main-title'>⛸️ Coach Mode</div>", unsafe_allow_html=True)
+
+    # Display live scores (TSS, TES, PCS) at the top of the page, TSS first, no deductions
+    st.markdown("""
+    <div style='display: flex; justify-content: space-around; align-items: center; margin-bottom: 20px;'>
+        <div class='score-container'>
+            <div class='score-label'>TSS</div>
+            <div class='big-score'>{:.2f}</div>
+        </div>
+        <div class='score-container'>
+            <div class='score-label'>TES</div>
+            <div class='big-score'>{:.2f}</div>
+        </div>
+        <div class='score-container'>
+            <div class='score-label'>PCS</div>
+            <div class='big-score'>{:.2f}</div>
+        </div>
     </div>
-    <div class='score-container'>
-        <div class='score-label'>TES</div>
-        <div class='big-score'>{:.2f}</div>
-    </div>
-    <div class='score-container'>
-        <div class='score-label'>PCS</div>
-        <div class='big-score'>{:.2f}</div>
-    </div>
-</div>
-""".format(
-    st.session_state.tes + st.session_state.pcs - st.session_state.deductions,
-    st.session_state.tes,
-    st.session_state.pcs
-), unsafe_allow_html=True)
+    """.format(
+        st.session_state.tes + st.session_state.pcs - st.session_state.deductions,
+        st.session_state.tes,
+        st.session_state.pcs
+    ), unsafe_allow_html=True)
 
-if st.session_state.page == "Coach":
     if st.session_state.current < len(st.session_state.program):
+        # Progress bar for scoring
+        st.progress((st.session_state.current) / len(st.session_state.program), text=f"Element {st.session_state.current+1} of {len(st.session_state.program)}")
         # Display live scores (TSS, PCS, TES) at the top only
         st.markdown(f"<div class='current-element'>{st.session_state.program[st.session_state.current]}</div>", unsafe_allow_html=True)
 
@@ -443,12 +487,18 @@ if st.session_state.page == "Coach":
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", size=12)
-            for col in protocol_df.columns:
-                pdf.cell(40, 10, col, border=1)
+            pdf.cell(40, 10, "Element", border=1)
+            pdf.cell(40, 10, "Base Value", border=1)
+            pdf.cell(40, 10, "GOE", border=1)
+            pdf.cell(40, 10, "Final Score", border=1)
+            pdf.cell(40, 10, "Edge Call", border=1)
             pdf.ln()
             for _, row in protocol_df.iterrows():
-                for item in row:
-                    pdf.cell(40, 10, str(item), border=1)
+                pdf.cell(40, 10, str(row["Element"]), border=1)
+                pdf.cell(40, 10, f"{row['Base Value']:.2f}", border=1)
+                pdf.cell(40, 10, f"{row['GOE']:.2f}", border=1)
+                pdf.cell(40, 10, f"{row['Final Score']:.2f}", border=1)
+                pdf.cell(40, 10, str(row["Edge Call"]), border=1)
                 pdf.ln()
             # Add summary (TSS, TES, PCS) to the PDF after the table
             pdf.ln(10)
@@ -464,6 +514,20 @@ if st.session_state.page == "Coach":
             with open(pdf_file, "rb") as f:
                 st.download_button("📄", f, file_name="protocol_sheet.pdf", mime="application/pdf")
 
+            # Submit Score button for results
+            if 'results' not in st.session_state:
+                st.session_state.results = {}
+            if st.button("Submit Score", key="submit_score_button"):
+                skater_name = st.session_state.skater_name if not st.session_state.competition_mode else st.session_state.selected_skater
+                st.session_state.results[skater_name] = {
+                    'TES': st.session_state.tes,
+                    'PCS': st.session_state.pcs,
+                    'Deductions': st.session_state.deductions,
+                    'TSS': tss,
+                    'protocol': protocol_df.copy()
+                }
+                st.success(f"Score submitted for {skater_name}!")
+
             # Allow program reset
             if st.button("Reset Program", key="reset_program_end_button"):
                 st.session_state.program = []
@@ -477,8 +541,14 @@ if st.session_state.page == "Coach":
         def autocomplete_suggestions(input_text, options):
             if not input_text:
                 return []
-            suggestions = [option for option in options if option.startswith(input_text.upper())]
-            return suggestions[:10]
+            input_upper = input_text.upper()
+            # If input is valid, return no suggestions
+            if input_upper in options:
+                return []
+            # Otherwise, return 3 closest options by Levenshtein distance
+            distances = [(option, levenshtein_distance(input_upper, option)) for option in options]
+            distances.sort(key=lambda x: x[1])
+            return [option for option, _ in distances[:3]]
 
         user_input = st.text_input(
             "Enter element codes (e.g., 3A, 2T+2T):",
@@ -488,145 +558,281 @@ if st.session_state.page == "Coach":
         all_element_options = list(base_values.keys())
         autocomplete_options = autocomplete_suggestions(user_input, all_element_options)
 
-        # Display clickable suggestions below the text input
         if autocomplete_options:
-            st.markdown("**Suggestions:**", unsafe_allow_html=True)
+            st.markdown("**Did you mean?**", unsafe_allow_html=True)
             sugg_cols = st.columns(len(autocomplete_options))
             for i, suggestion in enumerate(autocomplete_options):
                 with sugg_cols[i]:
-                    if st.button(suggestion, key=f"suggestion_{suggestion}"):
+                    if st.button(suggestion, key=f"suggestion_coach_{i}_{suggestion}"):
                         st.session_state.element_autocomplete = suggestion
-                        st.experimental_rerun()
+                        st.rerun()
 
-        if st.button("Add Elements"):
-            if user_input:
-                input_list = [item.strip().upper() for item in user_input.split(",")]
-                valid_elements = []
-                invalid_elements = []
-                for item in input_list:
-                    parts = [p.strip() for p in item.split("+")]
-                    if 1 <= len(parts) <= 3 and all(part in base_values for part in parts):
-                        valid_elements.append("+".join(parts))
+        if st.session_state.competition_mode:
+            if st.session_state.selected_skater and st.session_state.selected_skater in st.session_state.skaters:
+                program_list = st.session_state.skaters[st.session_state.selected_skater]['program']
+                if program_list:
+                    st.markdown('**Current Program for ' + st.session_state.selected_skater + ':**')
+                    for idx, elem in enumerate(program_list):
+                        col1, col2 = st.columns([6, 1])
+                        with col1:
+                            st.write(elem)
+                        with col2:
+                            if st.button('❌', key=f'del_elem_{st.session_state.selected_skater}_{idx}'):
+                                program_list.pop(idx)
+                                st.rerun()
+                if st.button("Add Elements"):
+                    if user_input:
+                        input_list = [item.strip().upper() for item in user_input.split(",")]
+                        valid_elements = []
+                        invalid_elements = []
+                        for item in input_list:
+                            parts = [p.strip() for p in item.split("+")]
+                            if 1 <= len(parts) <= 3 and all(part in base_values for part in parts):
+                                valid_elements.append("+".join(parts))
+                            else:
+                                invalid_elements.append(item)
+                        if invalid_elements:
+                            st.error(f"Invalid element(s): {', '.join(invalid_elements)}. Please check your input.")
+                        if valid_elements:
+                            program_list.extend(valid_elements)
+                            st.success(f"Added element(s): {', '.join(valid_elements)}")
                     else:
-                        invalid_elements.append(item)
-                if invalid_elements:
-                    st.error(f"Invalid element(s): {', '.join(invalid_elements)}. Please check your input.")
-                if valid_elements:
-                    st.session_state.program.extend(valid_elements)
-                    st.success(f"Added element(s): {', '.join(valid_elements)}")
+                        st.error("Please enter a valid element code.")
+                col_start, spacer, col_reset = st.columns([1, 0.1, 1])
+                with col_start:
+                    start_clicked = st.button("Start Program", key=f"start_program_col_{st.session_state.selected_skater}")
+                with col_reset:
+                    reset_clicked = st.button("❌", key=f"reset_program_col_{st.session_state.selected_skater}")
+                if reset_clicked:
+                    st.session_state.skaters[st.session_state.selected_skater]['program'] = []
+                    st.session_state.skaters[st.session_state.selected_skater]['current'] = 0
+                    st.session_state.skaters[st.session_state.selected_skater]['scores'] = []
+                    st.session_state.skaters[st.session_state.selected_skater]['tes'] = 0.0
+                    st.session_state.skaters[st.session_state.selected_skater]['edge_calls'] = {}
+                    st.success("Program has been reset.")
+                if program_list:
+                    st.write("Program: " + ", ".join(program_list))
+                if start_clicked:
+                    if program_list:
+                        st.session_state.skaters[st.session_state.selected_skater]['current'] = 0
+                        st.session_state.program = program_list
+                        st.session_state.current = 0
+                        st.session_state.scores = []
+        if autocomplete_options:
+            st.markdown("**Did you mean?**", unsafe_allow_html=True)
+            sugg_cols = st.columns(len(autocomplete_options))
+            for i, suggestion in enumerate(autocomplete_options):
+                with sugg_cols[i]:
+                    if st.button(suggestion, key=f"suggestion_coach_{i}_{suggestion}"):
+                        st.session_state.element_autocomplete = suggestion
+                        st.rerun()
+
+        if st.session_state.competition_mode:
+            if st.session_state.selected_skater and st.session_state.selected_skater in st.session_state.skaters:
+                program_list = st.session_state.skaters[st.session_state.selected_skater]['program']
+                # Show program with delete buttons for this skater
+                if program_list:
+                    st.markdown('**Current Program for ' + st.session_state.selected_skater + ':**')
+                    for idx, elem in enumerate(program_list):
+                        col1, col2 = st.columns([6, 1])
+                        with col1:
+                            st.write(elem)
+                        with col2:
+                            if st.button('❌', key=f'del_elem_{st.session_state.selected_skater}_{idx}'):
+                                program_list.pop(idx)
+                                st.rerun()
+                if st.button("Add Elements"):
+                    if user_input:
+                        input_list = [item.strip().upper() for item in user_input.split(",")]
+                        valid_elements = []
+                        invalid_elements = []
+                        for item in input_list:
+                            parts = [p.strip() for p in item.split("+")]
+                            if 1 <= len(parts) <= 3 and all(part in base_values for part in parts):
+                                valid_elements.append("+".join(parts))
+                            else:
+                                invalid_elements.append(item)
+                        if invalid_elements:
+                            st.error(f"Invalid element(s): {', '.join(invalid_elements)}. Please check your input.")
+                        if valid_elements:
+                            program_list.extend(valid_elements)
+                            st.success(f"Added element(s): {', '.join(valid_elements)}")
+                    else:
+                        st.error("Please enter a valid element code.")
+                col_start, spacer, col_reset = st.columns([1, 0.1, 1])
+                with col_start:
+                    start_clicked = st.button("Start Program", key=f"start_program_col_{st.session_state.selected_skater}")
+                with col_reset:
+                    reset_clicked = st.button("❌", key=f"reset_program_col_{st.session_state.selected_skater}")
+                if reset_clicked:
+                    st.session_state.skaters[st.session_state.selected_skater]['program'] = []
+                    st.session_state.skaters[st.session_state.selected_skater]['current'] = 0
+                    st.session_state.skaters[st.session_state.selected_skater]['scores'] = []
+                    st.session_state.skaters[st.session_state.selected_skater]['tes'] = 0.0
+                    st.session_state.skaters[st.session_state.selected_skater]['edge_calls'] = {}
+                    st.success("Program has been reset.")
+                if program_list:
+                    st.write("Program: " + ", ".join(program_list))
+                if start_clicked:
+                    if program_list:
+                        st.session_state.skaters[st.session_state.selected_skater]['current'] = 0
+                        st.session_state.program = program_list
+                        st.session_state.current = 0
+                        st.session_state.scores = []
+                        st.session_state.tes = 0.0
+                        st.session_state.edge_calls = {}
+                        st.rerun()  # Transition to scoring mode
+                    else:
+                        st.error("Please add elements to the program before starting.")
             else:
-                st.error("Please enter a valid element code.")
+                st.info("Please select a skater to edit their program.")
+        else:
+            if 'program' not in st.session_state:
+                st.session_state.program = []
+            program_list = st.session_state.program
 
-        col_start, spacer, col_reset = st.columns([1, 0.1, 1])
-        with col_start:
-            start_clicked = st.button("Start Program", key="start_program_col")
-        with col_reset:
-            reset_clicked = st.button("❌", key="reset_program_col")
+            # Show program with delete buttons
+            if program_list:
+                st.markdown('**Current Program:**')
+                for idx, elem in enumerate(program_list):
+                    col1, col2 = st.columns([6, 1])
+                    with col1:
+                        st.write(elem)
+                    with col2:
+                        if st.button('❌', key=f'del_elem_{idx}'):
+                            program_list.pop(idx)
+                            st.rerun()
 
-        if reset_clicked:
-            st.session_state.program = []
-            st.session_state.current = 0
-            st.session_state.scores = []
-            st.session_state.tes = 0.0
-            st.session_state.edge_calls = {}
-            st.success("Program has been reset.")
+            if st.button("Add Elements"):
+                if user_input:
+                    input_list = [item.strip().upper() for item in user_input.split(",")]
+                    valid_elements = []
+                    invalid_elements = []
+                    for item in input_list:
+                        parts = [p.strip() for p in item.split("+")]
+                        if 1 <= len(parts) <= 3 and all(part in base_values for part in parts):
+                            valid_elements.append("+".join(parts))
+                        else:
+                            invalid_elements.append(item)
+                    if invalid_elements:
+                        st.error(f"Invalid element(s): {', '.join(invalid_elements)}. Please check your input.")
+                    if valid_elements:
+                        program_list.extend(valid_elements)
+                        st.success(f"Added element(s): {', '.join(valid_elements)}")
+                else:
+                    st.error("Please enter a valid element code.")
 
-        if st.session_state.program:
-            st.write("Program: " + ", ".join(st.session_state.program))
+            col_start, spacer, col_reset = st.columns([1, 0.1, 1])
+            with col_start:
+                start_clicked = st.button("Start Program", key="start_program_col")
+            with col_reset:
+                reset_clicked = st.button("❌", key="reset_program_col")
 
-        if start_clicked:
-            if st.session_state.program:
+            if reset_clicked:
+                st.session_state.program = []
                 st.session_state.current = 0
-                st.rerun()  # Transition to scoring mode
-            else:
-                st.error("Please add elements to the program before starting.")
+                st.session_state.scores = []
+                st.session_state.tes = 0.0
+                st.session_state.edge_calls = {}
+                st.success("Program has been reset.")
 
-    # Fix the PCS check to avoid TypeError
-    if st.session_state.pcs == 0:
-        st.warning("You have not adjusted the PCS scores. Please adjust them in the sidebar before proceeding.")
-        st.stop()  # Stop further execution until PCS scores are adjusted
+            if program_list:
+                st.write("Program: " + ", ".join(program_list))
 
-    st.success("All GOE's have been entered! Here is the protocol sheet:")
+            if start_clicked:
+                if program_list:
+                    st.session_state.current = 0
+                    st.rerun()  # Transition to scoring mode
+                else:
+                    st.error("Please add elements to the program before starting.")
 
-    # Generate protocol sheet DataFrame
-    protocol_df = pd.DataFrame(st.session_state.scores, columns=["Element", "GOE", "Score", "Edge Call"])
-    protocol_df["Base Value"] = protocol_df["Element"].apply(
-        lambda x: sum(base_values[part] for part in x.split("+") if part in base_values)
-    )
-    protocol_df["Final Score"] = protocol_df["Base Value"] * (1 + protocol_df["GOE"] / 10)
-    protocol_df = protocol_df[["Element", "Base Value", "GOE", "Final Score", "Edge Call"]]
+        # Fix the PCS check to avoid TypeError
+        if st.session_state.pcs == 0:
+            st.warning("You have not adjusted the PCS scores. Please adjust them in the sidebar before proceeding.")
 
-    # Display protocol sheet using Streamlit's built-in table functionality
-    st.dataframe(protocol_df.style.set_properties(**{'text-align': 'center'}))
+        st.success("All GOE's have been entered! Here is the protocol sheet:")
 
-    # Calculate TSS, TES, PCS, and deductions
-    tes = float(protocol_df["Final Score"].sum())
-    pcs = float(st.session_state.pcs)
-    deductions = float(st.session_state.deductions)
-    tss = tes + pcs - deductions
+        # Generate protocol sheet DataFrame
+        protocol_df = pd.DataFrame(st.session_state.scores, columns=["Element", "GOE", "Score", "Edge Call"])
+        protocol_df["Base Value"] = protocol_df["Element"].apply(
+            lambda x: sum(base_values[part] for part in x.split("+") if part in base_values)
+        )
+        protocol_df["Final Score"] = protocol_df["Base Value"] * (1 + protocol_df["GOE"] / 10)
+        protocol_df = protocol_df[["Element", "Base Value", "GOE", "Final Score", "Edge Call"]]
 
-    # Display TSS, TES, PCS, and deductions
-    st.markdown(f"""
-    <div style='margin-top: 20px;'>
-        <h3>Summary</h3>
-        <p><strong>TES:</strong> {tes:.2f}</p>
-        <p><strong>PCS:</strong> {pcs:.2f}</p>
-        <p><strong>Deductions:</strong> {deductions:.2f}</p>
-        <p><strong>TSS:</strong> {tss:.2f}</p>
-    </div>
-    """, unsafe_allow_html=True)
+        # Display protocol sheet using Streamlit's built-in table functionality
+        st.dataframe(protocol_df.style.set_properties(**{'text-align': 'center'}))
 
-    # Provide download options for the protocol sheet
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(40, 10, "Element", border=1)
-    pdf.cell(40, 10, "Base Value", border=1)
-    pdf.cell(40, 10, "GOE", border=1)
-    pdf.cell(40, 10, "Final Score", border=1)
-    pdf.cell(40, 10, "Edge Call", border=1)
-    pdf.ln()
-    for _, row in protocol_df.iterrows():
-        pdf.cell(40, 10, str(row["Element"]), border=1)
-        pdf.cell(40, 10, f"{row['Base Value']:.2f}", border=1)
-        pdf.cell(40, 10, str(row["GOE"]), border=1)
-        pdf.cell(40, 10, f"{row['Final Score']:.2f}", border=1)
-        pdf.cell(40, 10, str(row["Edge Call"]), border=1)
+        # Calculate TSS, TES, PCS, and deductions
+        tes = float(protocol_df["Final Score"].sum())
+        pcs = float(st.session_state.pcs)
+        deductions = float(st.session_state.deductions)
+        tss = tes + pcs - deductions
+
+        # Display TSS, TES, PCS, and deductions
+        st.markdown(f"""
+        <div style='margin-top: 20px;'>
+            <h3>Summary</h3>
+            <p><strong>TES:</strong> {tes:.2f}</p>
+            <p><strong>PCS:</strong> {pcs:.2f}</p>
+            <p><strong>Deductions:</strong> {deductions:.2f}</p>
+            <p><strong>TSS:</strong> {tss:.2f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Provide download options for the protocol sheet
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.cell(40, 10, "Element", border=1)
+        pdf.cell(40, 10, "Base Value", border=1)
+        pdf.cell(40, 10, "GOE", border=1)
+        pdf.cell(40, 10, "Final Score", border=1)
+        pdf.cell(40, 10, "Edge Call", border=1)
         pdf.ln()
-    # Add summary (TSS, TES, PCS) to the PDF after the table
-    pdf.ln(10)
-    pdf.set_font("Arial", style="B", size=12)
-    pdf.cell(0, 10, "Summary", ln=1)
-    pdf.set_font("Arial", size=12)
-    pdf.cell(60, 10, f"TES: {tes:.2f}", ln=1)
-    pdf.cell(60, 10, f"PCS: {pcs:.2f}", ln=1)
-    pdf.cell(60, 10, f"TSS: {tss:.2f}", ln=1)
-    pdf_file = "protocol_sheet.pdf"
-    pdf.output(pdf_file)
+        for _, row in protocol_df.iterrows():
+            pdf.cell(40, 10, str(row["Element"]), border=1)
+            pdf.cell(40, 10, f"{row['Base Value']:.2f}", border=1)
+            pdf.cell(40, 10, f"{row['GOE']:.2f}", border=1)
+            pdf.cell(40, 10, f"{row['Final Score']:.2f}", border=1)
+            pdf.cell(40, 10, str(row["Edge Call"]), border=1)
+            pdf.ln()
+        # Add summary (TSS, TES, PCS) to the PDF after the table
+        pdf.ln(10)
+        pdf.set_font("Arial", style="B", size=12)
+        pdf.cell(0, 10, "Summary", ln=1)
+        pdf.set_font("Arial", size=12)
+        pdf.cell(60, 10, f"TES: {tes:.2f}", ln=1)
+        pdf.cell(60, 10, f"PCS: {pcs:.2f}", ln=1)
+        pdf.cell(60, 10, f"TSS: {tss:.2f}", ln=1)
+        pdf_file = "protocol_sheet.pdf"
+        pdf.output(pdf_file)
 
-    # Place PDF download, Rerun, and Reset buttons on the same row
-    col_pdf, col_rerun, col_reset = st.columns([1, 1, 1], gap="large")
-    with col_pdf:
-        with open(pdf_file, "rb") as f:
-            st.download_button("📄", f, file_name="protocol_sheet.pdf", mime="application/pdf")
-    with col_rerun:
-        if st.button("Rerun Program", key="rerun_program_button"):
-            st.session_state.current = 0
-            st.session_state.scores = []
-            st.session_state.tes = 0.0
-            st.session_state.edge_calls = {}
-            st.rerun()
-    with col_reset:
-        if st.button("❌", key="reset_program_button"):
-            st.session_state.program = []
-            st.session_state.current = 0
-            st.session_state.scores = []
-            st.session_state.tes = 0.0
-            st.session_state.edge_calls = {}
-            st.success("Program has been reset.")
+        # Place PDF download, Rerun, and Reset buttons on the same row
+        col_pdf, col_rerun, col_reset = st.columns([1, 1, 1], gap="large")
+        with col_pdf:
+            with open(pdf_file, "rb") as f:
+                st.download_button("📄", f, file_name="protocol_sheet.pdf", mime="application/pdf")
+        with col_rerun:
+            if st.button("Rerun Program", key="rerun_program_button"):
+                st.session_state.current = 0
+                st.session_state.scores = []
+                st.session_state.tes = 0.0
+                st.session_state.edge_calls = {}
+                st.rerun()
+        with col_reset:
+            if st.button("❌", key="reset_program_button"):
+                st.session_state.program = []
+                st.session_state.current = 0
+                st.session_state.scores = []
+                st.session_state.tes = 0.0
+                st.session_state.edge_calls = {}
+                st.success("Program has been reset.")
 
-elif st.session_state.page == "Prediction":
-    # Prediction Mode Content
+# Prediction Tab
+with tabs[1]:
+    # --- Prediction Page Content ---
+    st.markdown(f"<div class='main-title'>⛸️ Prediction Mode</div>", unsafe_allow_html=True)
     st.subheader("Prediction Program Builder")
     program_pred = st.multiselect("Select your program elements:", options=list(base_values.keys()))
     if st.button("Predict Scores", key="predict_scores"):
@@ -643,28 +849,293 @@ elif st.session_state.page == "Prediction":
         csv_data = st.session_state.predicted_scores.to_csv(index=False).encode('utf-8')
         st.download_button(f"Download Predictions ({timestamp})", csv_data, f"predicted_scores_{timestamp}.csv", "text/csv")
 
-elif st.session_state.page == "Glossary":
-    # Glossary Content
-    st.write("""
-    **GOE (Grade of Execution):** Performance bonus/penalty (-5 to +5) applied to base element values.
-    **TES (Technical Element Score):** Sum of all scored technical elements.
-    **PCS (Program Component Score):** Judges' artistic scores on:
-    - Skating Skills
-    - Transitions
-    - Performance
-    - Composition
-    - Interpretation
-    **TSS (Total Segment Score):** TES + PCS + Deductions.
-    **Edge Calls:** `Q`, `U`, `e`, `!` indicating unclear or wrong takeoffs.
-    **Combos:** Multiple jumps linked by `+` (max 3).
-    **Deductions:** Penalties for falls, violations, illegal moves.
-    """)
+# Skater Management Tab
+with tabs[2]:
+    st.markdown("<div class='main-title'>⛸️ Skater Management</div>", unsafe_allow_html=True)
+    new_skater = st.text_input("Add Skater Name", key="add_skater_mgmt")
+    categories = ["Mens", "Ladies"]
+    adult_levels = [
+        "Adult Pre-Bronze", "Adult Bronze", "Adult Silver", "Adult Gold", "Adult Masters"
+    ]
+    levels = [
+        "Basic Novice", "Intermediate Novice", "Advanced Novice", "Junior", "Senior"
+    ] + adult_levels
+    programs = ["Free Skating", "Short Program", "Rhythm Dance", "Artistic"]
+    selected_category = st.selectbox("Select Category", categories, key="select_category_mgmt")
+    selected_level = st.selectbox("Select Level", levels, key="select_level_mgmt")
+    selected_program = st.selectbox("Select Program Type", programs, key="select_program_mgmt")
+    if st.button("Add Skater", key="add_skater_btn_mgmt"):
+        if new_skater and new_skater not in st.session_state.skaters:
+            st.session_state.skaters[new_skater] = {
+                'category': selected_category,
+                'level': selected_level,
+                'program_type': selected_program,
+                'program': [],
+                'scores': [],
+                'tes': 0.0,
+                'pcs': 0.0,
+                'deductions': 0,
+                'current': 0,
+                'edge_calls': {}
+            }
+            st.session_state.selected_skater = new_skater
+            st.success(f"Skater {new_skater} added successfully!")
+            st.rerun()
+        elif new_skater in st.session_state.skaters:
+            st.warning("Skater already exists.")
+        else:
+            st.warning("Please enter a valid name.")
+    # Skater selection and program setup
+    if st.session_state.skaters:
+        skater_list = list(st.session_state.skaters.keys())
+        selected = st.selectbox("Select Skater", skater_list, index=skater_list.index(st.session_state.selected_skater) if st.session_state.selected_skater in skater_list else 0, key="select_skater_mgmt")
+        st.session_state.selected_skater = selected
+        skater = st.session_state.selected_skater
+        if skater:
+            skater_info = st.session_state.skaters[skater]
+            st.markdown(f"**Category:** {skater_info['category']}  ")
+            st.markdown(f"**Level:** {skater_info['level']}  ")
+            st.markdown(f"**Program Type:** {skater_info['program_type']}  ")
+            # Program Entry
+            user_input = st.text_input(f"Enter element codes for {skater} (e.g., 3A, 2T+2T):", key=f"element_autocomplete_mgmt_{skater}")
+            program_list = skater_info['program']
+            all_element_options = list(base_values.keys())
+            autocomplete_options = autocomplete_suggestions(user_input, all_element_options)
+            if autocomplete_options:
+                st.markdown("**Did you mean?**", unsafe_allow_html=True)
+                sugg_cols = st.columns(len(autocomplete_options))
+                for i, suggestion in enumerate(autocomplete_options):
+                    with sugg_cols[i]:
+                        # Unique key for each suggestion button
+                        if st.button(suggestion, key=f"suggestion_mgmt_{skater}_{i}_{suggestion}"):
+                            st.session_state[f"element_autocomplete_mgmt_{skater}"] = suggestion
+                            st.rerun()
+            if program_list:
+                st.markdown('**Current Program:**')
+                for idx, elem in enumerate(program_list):
+                    col1, col2 = st.columns([6, 1])
+                    with col1:
+                        st.write(elem)
+                    with col2:
+                        if st.button('❌', key=f'del_elem_mgmt_{skater}_{idx}'):
+                            program_list.pop(idx)
+                            st.rerun()
+            if st.button("Add Elements", key=f"add_elements_mgmt_{skater}"):
+                if user_input:
+                    input_list = [item.strip().upper() for item in user_input.split(",")]
+                    valid_elements = []
+                    invalid_elements = []
+                    for item in input_list:
+                        parts = [p.strip() for p in item.split("+")]
+                        if 1 <= len(parts) <= 3 and all(part in base_values for part in parts):
+                            valid_elements.append("+".join(parts))
+                        else:
+                            invalid_elements.append(item)
+                    if invalid_elements:
+                        st.error(f"Invalid element(s): {', '.join(invalid_elements)}. Please check your input.")
+                    if valid_elements:
+                        program_list.extend(valid_elements)
+                        st.success(f"Added element(s): {', '.join(valid_elements)}")
+                else:
+                    st.error("Please enter a valid element code.")
+            if st.button("Reset Program", key=f"reset_program_mgmt_{skater}"):
+                skater_info['program'] = []
+                skater_info['current'] = 0
+                skater_info['scores'] = []
+                skater_info['tes'] = 0.0
+                skater_info['edge_calls'] = {}
+                st.success("Program has been reset.")
+
+# Competition Tab
+with tabs[3]:
+    # --- Competition Page Content ---
+    st.markdown("<div class='main-title'>⛸️ Competition Mode</div>", unsafe_allow_html=True)
+    # Only scoring for already-added skaters
+    if st.session_state.skaters:
+        skater_list = list(st.session_state.skaters.keys())
+        selected = st.selectbox("Select Skater", skater_list, index=skater_list.index(st.session_state.selected_skater) if st.session_state.selected_skater in skater_list else 0, key="select_skater_comp")
+        st.session_state.selected_skater = selected
+        skater = st.session_state.selected_skater
+        if skater:
+            skater_info = st.session_state.skaters[skater]
+            program_list = skater_info['program']
+            col_start, col_reset = st.columns([1, 1])
+            with col_start:
+                if st.button("Start Scoring", key=f"start_scoring_comp_{skater}"):
+                    if program_list:
+                        st.session_state.competition_scoring = skater
+                        skater_info['current'] = 0
+                        skater_info['scores'] = []
+                        skater_info['tes'] = 0.0
+                        skater_info['edge_calls'] = {}
+                        st.session_state.page = "Competition"
+                        st.rerun()
+                    else:
+                        st.error("Please add elements to the program before starting.")
+            with col_reset:
+                if st.button("Reset Program", key=f"reset_program_comp_{skater}"):
+                    skater_info['program'] = []
+                    skater_info['current'] = 0
+                    skater_info['scores'] = []
+                    skater_info['tes'] = 0.0
+                    skater_info['edge_calls'] = {}
+                    st.success("Program has been reset.")
+    # Scoring Mode
+    if st.session_state.competition_scoring:
+        skater = st.session_state.competition_scoring
+        skater_info = st.session_state.skaters[skater]
+        program_list = skater_info['program']
+        current = skater_info['current']
+        scores = skater_info['scores']
+        tes = skater_info['tes']
+        edge_calls = skater_info['edge_calls']
+
+        st.markdown(f"### Scoring: {skater}")
+        st.progress((current) / len(program_list) if program_list else 0, text=f"Element {current+1} of {len(program_list)}")
+
+        if current < len(program_list):
+            st.markdown(f"<div class='current-element'>{program_list[current]}</div>", unsafe_allow_html=True)
+            columns = st.columns(11)
+            for i, val in enumerate(range(-5, 6)):
+                display_val = f"+{val}" if val > 0 else str(val)
+                with columns[i]:
+                    if st.button(display_val, key=f"goe_{val}_{skater}_{current}"):
+                        element = program_list[current]
+                        if "+" in element:
+                            elements = element.split("+")
+                            base_score = sum(base_values[e] for e in elements)
+                        else:
+                            base_score = base_values[element]
+                        score = base_score * (1 + val / 10)
+                        edge_call = edge_calls.get(element, '')
+                        scores.append((element, val, score, edge_call))
+                        tes += score
+                        skater_info['current'] = current + 1
+                        skater_info['scores'] = scores
+                        skater_info['tes'] = tes
+                        skater_info['edge_calls'] = edge_calls
+                        st.rerun()
+
+            call_cols = st.columns(6)
+            for i, call in enumerate(["e", "!", "Q", "U", "D", "V"]):
+                with call_cols[i]:
+                    if st.button(call, key=f"edge_{call}_{skater}_{current}"):
+                        edge_calls[program_list[current]] = call
+                        skater_info['edge_calls'] = edge_calls
+                        st.rerun()
+
+        else:
+            st.success("Program ended! You can review the scores.")
+            protocol_df = pd.DataFrame(scores, columns=["Element", "GOE", "Score", "Edge Call"])
+            protocol_df["Base Value"] = protocol_df["Element"].apply(
+                lambda x: sum(base_values[part] for part in x.split("+") if part in base_values)
+            )
+            protocol_df["Final Score"] = protocol_df["Base Value"] * (1 + protocol_df["GOE"] / 10)
+            protocol_df = protocol_df[["Element", "Base Value", "GOE", "Final Score", "Edge Call"]]
+            st.dataframe(protocol_df.style.set_properties(**{'text-align': 'center'}))
+            tes = float(protocol_df["Final Score"].sum())
+            pcs = float(st.session_state.pcs)
+            deductions = float(st.session_state.deductions)
+            tss = tes + pcs - deductions
+            st.markdown(f"""
+            <div style='margin-top: 20px;'>
+                <h3>Summary</h3>
+                <p><strong>TES:</strong> {tes:.2f}</p>
+                <p><strong>PCS:</strong> {pcs:.2f}</p>
+                <p><strong>Deductions:</strong> {deductions:.2f}</p>
+                <p><strong>TSS:</strong> {tss:.2f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if st.button("Submit Score", key=f"submit_score_{skater}"):
+                if 'results' not in st.session_state:
+                    st.session_state.results = {}
+                st.session_state.results[skater] = {
+                    'TES': tes,
+                    'PCS': pcs,
+                    'Deductions': deductions,
+                    'TSS': tss,
+                    'protocol': protocol_df.copy()
+                }
+                skater_info['current'] = 0
+                skater_info['scores'] = []
+                skater_info['tes'] = 0.0
+                skater_info['edge_calls'] = {}
+                st.session_state.competition_scoring = None
+                st.success(f"Score submitted for {skater}!")
+                st.rerun()
+
+# Results Tab
+with tabs[4]:
+    st.markdown(f"<div class='main-title'>⛸️ Results</div>", unsafe_allow_html=True)
+    if 'results' in st.session_state and st.session_state.results:
+        # Prepare results DataFrame with category and level
+        results_data = [
+            {
+                'Skater': skater,
+                'Category': st.session_state.skaters[skater]['category'] if skater in st.session_state.skaters else '',
+                'Level': st.session_state.skaters[skater]['level'] if skater in st.session_state.skaters else '',
+                'TSS': data['TSS'],
+                'TES': data['TES'],
+                'PCS': data['PCS'],
+                'Deductions': data['Deductions'],
+                'protocol': data['protocol']
+            }
+            for skater, data in st.session_state.results.items()
+        ]
+        results_df = pd.DataFrame(results_data)
+        # Group by Category and Level
+        grouped = results_df.groupby(['Category', 'Level'])
+        for (cat, lvl), group in grouped:
+            group_sorted = group.sort_values(by='TSS', ascending=False).reset_index(drop=True)
+            st.markdown(f"### {cat} - {lvl}")
+            st.dataframe(group_sorted[['Skater', 'TSS', 'TES', 'PCS', 'Deductions']].style.format({'TSS': '{:.2f}', 'TES': '{:.2f}', 'PCS': '{:.2f}', 'Deductions': '{:.2f}'}))
+            # Leaderboard
+            st.markdown(f"**Leaderboard:** 🏆")
+            for idx, row in group_sorted.iterrows():
+                st.markdown(f"{idx+1}. **{row['Skater']}** — TSS: {row['TSS']:.2f}")
+            # Protocol sheets
+            for idx, row in group_sorted.iterrows():
+                with st.expander(f"Protocol Sheet for {row['Skater']}"):
+                    st.dataframe(row['protocol'].style.format({'Base Value': '{:.2f}', 'GOE': '{:.2f}', 'Final Score': '{:.2f}'}))
+                    if st.button(f"Download Protocol Sheet for {row['Skater']}", key=f"download_pdf_{cat}_{lvl}_{row['Skater']}"):
+                        pdf = FPDF()
+                        pdf.add_page()
+                        pdf.set_font("Arial", style="B", size=14)
+                        pdf.cell(0, 10, f"Protocol Sheet: {row['Skater']}", ln=1, align='C')
+                        pdf.set_font("Arial", size=12)
+                        pdf.cell(40, 10, "Element", border=1)
+                        pdf.cell(40, 10, "Base Value", border=1)
+                        pdf.cell(40, 10, "GOE", border=1)
+                        pdf.cell(40, 10, "Final Score", border=1)
+                        pdf.cell(40, 10, "Edge Call", border=1)
+                        pdf.ln()
+                        for _, prow in row['protocol'].iterrows():
+                            pdf.cell(40, 10, str(prow["Element"]), border=1)
+                            pdf.cell(40, 10, f"{prow['Base Value']:.2f}", border=1)
+                            pdf.cell(40, 10, f"{prow['GOE']:.2f}", border=1)
+                            pdf.cell(40, 10, f"{prow['Final Score']:.2f}", border=1)
+                            pdf.cell(40, 10, str(prow["Edge Call"]), border=1)
+                            pdf.ln()
+                        pdf.ln(10)
+                        pdf.set_font("Arial", style="B", size=12)
+                        pdf.cell(0, 10, "Summary", ln=1)
+                        pdf.set_font("Arial", size=12)
+                        pdf.cell(60, 10, f"TES: {row['TES']:.2f}", ln=1)
+                        pdf.cell(60, 10, f"PCS: {row['PCS']:.2f}", ln=1)
+                        pdf.cell(60, 10, f"TSS: {row['TSS']:.2f}", ln=1)
+                        pdf_file = f"protocol_sheet_{cat}_{lvl}_{row['Skater']}.pdf"
+                        pdf.output(pdf_file)
+                        with open(pdf_file, "rb") as f:
+                            st.download_button(f"📄 Download PDF for {row['Skater']}", f, file_name=pdf_file, mime="application/pdf")
+    else:
+        st.info("No results submitted yet. Score and submit at least one skater to see results here.")
 
 # --------------------------
 # Footer (unchanged)
 # --------------------------
 st.markdown("""
     <div class='footer'>
-        ⛸️ Rhubarb & Custard Skating Scorer — lovingly made by a code nerd on ice. ✨
+        ⛸️ Rhubarb & Custard Skating Scorer — lovingly made by a code nerd on ice. ✨<br>
     </div>
 """, unsafe_allow_html=True)
